@@ -11,12 +11,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
+// Safety check for Render environment variable
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+  console.error('❌ FIREBASE_SERVICE_ACCOUNT environment variable is missing!');
+  process.exit(1);
+}
+
 // Use the JSON from environment variable instead of a local file
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'memoryretrieve.appspot.com' // <-- replace with your actual Firebase Storage bucket
+  storageBucket: 'memoryretrieve.appspot.com' // <-- keep your actual bucket
 });
 
 const bucket = admin.storage().bucket();
