@@ -11,41 +11,48 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
-// Safety check for Render environment variable
+// -------------------- FIREBASE --------------------
+// Safety check for Firebase env variable
 if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
   console.error('❌ FIREBASE_SERVICE_ACCOUNT environment variable is missing!');
   process.exit(1);
 }
 
-// Safely parse Firebase service account JSON from Render env variable
+// Parse Firebase JSON from environment variable
 let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-
-// Remove extra quotes if Render added them
 if (raw.startsWith('"') && raw.endsWith('"')) {
   raw = raw.slice(1, -1).replace(/\\"/g, '"');
 }
-
 const serviceAccount = JSON.parse(raw);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'memoryretrieve.appspot.com' // <-- keep your actual bucket
+  storageBucket: 'memoryretrieve.appspot.com' // <-- your bucket
 });
 const bucket = admin.storage().bucket();
 
-// MongoDB connection
+// -------------------- MONGODB --------------------
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = 'memoryretrieve';
 let db;
 
 async function connectDB() {
-  const client = new MongoClient(MONGODB_URI);
-  await client.connect();
-  db = client.db(DB_NAME);
-  console.log('Connected to MongoDB');
+  try {
+    const client = new MongoClient(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      tls: true, // ensures secure connection
+    });
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log('✅ Connected to MongoDB');
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err);
+    process.exit(1);
+  }
 }
 
-// Routes
+// -------------------- ROUTES --------------------
 
 // Dashboard - Show all videos and detections
 app.get('/', async (req, res) => {
@@ -54,22 +61,16 @@ app.get('/', async (req, res) => {
       .find()
       .sort({ timestamp: -1 })
       .toArray();
-    
-    // Group detections by videoId
+
     const videoMap = {};
     detections.forEach(det => {
       if (!videoMap[det.videoId]) {
-        videoMap[det.videoId] = {
-          videoId: det.videoId,
-          cameraId: det.cameraId,
-          detections: []
-        };
+        videoMap[det.videoId] = { videoId: det.videoId, cameraId: det.cameraId, detections: [] };
       }
       videoMap[det.videoId].detections.push(det);
     });
-    
+
     const videos = Object.values(videoMap);
-    
     res.render('dashboard', { videos, message: req.query.message, error: req.query.error });
   } catch (error) {
     console.error('Error loading dashboard:', error);
@@ -81,20 +82,15 @@ app.get('/', async (req, res) => {
 app.get('/search', async (req, res) => {
   try {
     const { item } = req.query;
-    
-    if (!item) {
-      return res.redirect('/');
-    }
-    
+    if (!item) return res.redirect('/');
     const detections = await db.collection('detections')
       .find({ item: new RegExp(item, 'i') })
       .sort({ timestamp: -1 })
       .toArray();
-    
     res.render('search', { detections, searchTerm: item });
   } catch (error) {
     console.error('Error searching:', error);
-    res.render('search', { detections: [], searchTerm: item, error: 'Search failed' });
+    res.render('search', { detections: [], searchTerm: req.query.item, error: 'Search failed' });
   }
 });
 
@@ -102,69 +98,55 @@ app.get('/search', async (req, res) => {
 app.get('/video/:videoId', async (req, res) => {
   try {
     const { videoId } = req.params;
-    
     const detections = await db.collection('detections')
       .find({ videoId })
       .sort({ timestampSec: 1 })
       .toArray();
-    
-    if (detections.length === 0) {
-      return res.redirect('/?error=Video not found');
-    }
-    
-    // Get video URL from Firebase (assuming naming convention)
+
+    if (detections.length === 0) return res.redirect('/?error=Video not found');
+
     const fileName = `videos/${videoId}.mp4`;
     const file = bucket.file(fileName);
     const [exists] = await file.exists();
-    
+
     let videoUrl = '';
     if (exists) {
       await file.makePublic();
       videoUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     }
-    
-    res.render('video', { 
-      videoId, 
-      videoUrl, 
-      detections,
-      cameraId: detections[0].cameraId 
-    });
+
+    res.render('video', { videoId, videoUrl, detections, cameraId: detections[0].cameraId });
   } catch (error) {
     console.error('Error loading video:', error);
     res.redirect('/?error=Failed to load video');
   }
 });
 
-// API endpoint to get last seen location of item
+// API - last seen
 app.get('/api/last-seen/:item', async (req, res) => {
   try {
     const { item } = req.params;
-    
     const detection = await db.collection('detections')
       .find({ item: new RegExp(item, 'i') })
       .sort({ timestamp: -1 })
       .limit(1)
       .toArray();
-    
-    if (detection.length === 0) {
-      return res.json({ found: false, message: 'Item never detected' });
-    }
-    
+
+    if (detection.length === 0) return res.json({ found: false, message: 'Item never detected' });
     res.json({ found: true, detection: detection[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to search' });
   }
 });
 
-// API endpoint for Raspberry Pi to submit detection data
+// API - log detection
 app.post('/api/detection', async (req, res) => {
   try {
     const { cameraId, videoId, item, confidence, timestamp, timestampSec } = req.body;
-    
     if (!cameraId || !videoId || !item || !confidence || !timestamp || timestampSec === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     await db.collection('detections').insertOne({
       cameraId,
       videoId,
@@ -174,7 +156,7 @@ app.post('/api/detection', async (req, res) => {
       timestampSec: parseInt(timestampSec),
       createdAt: new Date()
     });
-    
+
     res.json({ success: true, message: 'Detection logged' });
   } catch (error) {
     console.error('Error logging detection:', error);
@@ -182,7 +164,7 @@ app.post('/api/detection', async (req, res) => {
   }
 });
 
-// Get all unique items detected
+// API - list items
 app.get('/api/items', async (req, res) => {
   try {
     const items = await db.collection('detections').distinct('item');
@@ -202,12 +184,9 @@ app.post('/delete/:id', async (req, res) => {
   }
 });
 
-// Start server
+// -------------------- START SERVER --------------------
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Smart Camera Dashboard running on http://localhost:${PORT}`);
   });
-}).catch(err => {
-  console.error('Failed to connect to MongoDB:', err);
-  process.exit(1);
 });
