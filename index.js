@@ -11,11 +11,14 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
-// Firebase Admin SDK initialization
+const admin = require('firebase-admin');
+
+// Use the JSON from environment variable instead of a local file
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'your-project-id.appspot.com' // Replace with your bucket
+  storageBucket: 'memoryretrieve.appspot.com' // <-- replace with your actual Firebase Storage bucket
 });
 
 const bucket = admin.storage().bucket();
