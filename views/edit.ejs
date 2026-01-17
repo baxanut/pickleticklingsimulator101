@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Viewer - Smart Camera Tracker</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>📹 Video Viewer</h1>
+        <p class="subtitle">Camera: <%= cameraId %> | Video: <%= videoId %></p>
+      </div>
+      <a href="/" class="btn btn-secondary">← Back to Dashboard</a>
+    </header>
+
+    <div class="video-viewer-container">
+      <!-- Video Player -->
+      <div class="video-player-section">
+        <% if (videoUrl) { %>
+          <video id="mainVideo" controls controlsList="nodownload">
+            <source src="<%= videoUrl %>" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+          <div class="video-controls-info">
+            <p id="currentTimeDisplay">Current Time: 0:00</p>
+          </div>
+        <% } else { %>
+          <div class="no-video">
+            <p>Video file not found in Firebase Storage.</p>
+            <small>Expected path: videos/<%= videoId %>.mp4</small>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- Detection Timeline -->
+      <div class="detection-timeline-section">
+        <h3>🎯 Detected Items (<%= detections.length %>)</h3>
+        
+        <!-- Timeline Markers -->
+        <% if (videoUrl) { %>
+          <div class="timeline-bar">
+            <div id="timelineMarkers" class="timeline-markers"></div>
+          </div>
+        <% } %>
+
+        <!-- Detections List -->
+        <div class="detections-list">
+          <% if (detections.length === 0) { %>
+            <p class="empty-message">No items detected in this video.</p>
+          <% } else { %>
+            <% detections.forEach((det, index) => { %>
+              <div class="detection-item" onclick="seekToTime(<%= det.timestampSec %>)">
+                <div class="detection-info">
+                  <div class="detection-header">
+                    <span class="item-name"><%= det.item %></span>
+                    <span class="confidence-badge"><%= (det.confidence * 100).toFixed(0) %>%</span>
+                  </div>
+                  <div class="detection-time">
+                    ⏱️ <%= Math.floor(det.timestampSec / 60) %>:<%= String(det.timestampSec % 60).padStart(2, '0') %>
+                    <span class="timestamp-date">(<%= new Date(det.timestamp).toLocaleString() %>)</span>
+                  </div>
+                </div>
+                <button class="btn btn-small btn-primary">▶️ Jump</button>
+              </div>
+            <% }); %>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const detections = <%- JSON.stringify(detections) %>;
+    const video = document.getElementById('mainVideo');
+    const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+
+    // Seek to specific time in video
+    function seekToTime(seconds) {
+      if (video) {
+        video.currentTime = seconds;
+        video.play();
+      }
+    }
+
+    // Update current time display
+    if (video) {
+      video.addEventListener('timeupdate', () => {
+        const minutes = Math.floor(video.currentTime / 60);
+        const seconds = Math.floor(video.currentTime % 60);
+        currentTimeDisplay.textContent = `Current Time: ${minutes}:${String(seconds).padStart(2, '0')}`;
+        
+        // Highlight current detection
+        highlightCurrentDetection(video.currentTime);
+      });
+
+      // Create timeline markers
+      video.addEventListener('loadedmetadata', () => {
+        createTimelineMarkers(video.duration);
+      });
+
+      // Check for seek parameter in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const seekTime = urlParams.get('seek');
+      if (seekTime) {
+        video.addEventListener('loadeddata', () => {
+          seekToTime(parseInt(seekTime));
+        }, { once: true });
+      }
+    }
+
+    function createTimelineMarkers(duration) {
+      const markersContainer = document.getElementById('timelineMarkers');
+      if (!markersContainer) return;
+
+      markersContainer.innerHTML = '';
+      
+      detections.forEach(det => {
+        const marker = document.createElement('div');
+        marker.className = 'timeline-marker-dot';
+        marker.style.left = `${(det.timestampSec / duration) * 100}%`;
+        marker.title = `${det.item} at ${Math.floor(det.timestampSec / 60)}:${String(det.timestampSec % 60).padStart(2, '0')}`;
+        marker.onclick = () => seekToTime(det.timestampSec);
+        markersContainer.appendChild(marker);
+      });
+    }
+
+    function highlightCurrentDetection(currentTime) {
+      const items = document.querySelectorAll('.detection-item');
+      items.forEach((item, index) => {
+        const detectionTime = detections[index].timestampSec;
+        if (Math.abs(currentTime - detectionTime) < 2) {
+          item.classList.add('active');
+        } else {
+          item.classList.remove('active');
+        }
+      });
+    }
+  </script>
+</body>
+</html>
