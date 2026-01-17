@@ -12,7 +12,7 @@ app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
 // Firebase Admin SDK initialization
-const serviceAccount = require('./firebase-service-account.json');
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   storageBucket: 'your-project-id.appspot.com' // Replace with your bucket
