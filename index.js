@@ -17,14 +17,20 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
   process.exit(1);
 }
 
-// Use the JSON from environment variable instead of a local file
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+// Safely parse Firebase service account JSON from Render env variable
+let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+
+// Remove extra quotes if Render added them
+if (raw.startsWith('"') && raw.endsWith('"')) {
+  raw = raw.slice(1, -1).replace(/\\"/g, '"');
+}
+
+const serviceAccount = JSON.parse(raw);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   storageBucket: 'memoryretrieve.appspot.com' // <-- keep your actual bucket
 });
-
 const bucket = admin.storage().bucket();
 
 // MongoDB connection
