@@ -11,8 +11,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
-const admin = require('firebase-admin');
-
 // Use the JSON from environment variable instead of a local file
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
