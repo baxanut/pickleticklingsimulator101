@@ -35,7 +35,7 @@ const bucket = admin.storage().bucket();
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-const DB_NAME = 'camera_tracker_db';
+const DB_NAME = 'memoryretrieve';
 let db;
 
 async function connectDB() {
