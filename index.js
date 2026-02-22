@@ -6,12 +6,12 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// -------------------- MIDDLEWARE --------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views')); // ensures Express finds your EJS files
+app.set('views', path.join(__dirname, 'views'));
 
 // -------------------- FIREBASE --------------------
 if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -30,6 +30,16 @@ admin.initializeApp({
   storageBucket: 'memoryretrieve.appspot.com'
 });
 const bucket = admin.storage().bucket();
+
+// Generate signed URL for a video
+async function getVideoUrl(videoId) {
+  const file = bucket.file(`videos/${videoId}.mp4`);
+  const [url] = await file.getSignedUrl({
+    action: 'read',
+    expires: '03-01-2035' // long expiry; can regenerate per request
+  });
+  return url;
+}
 
 // -------------------- MONGODB --------------------
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
@@ -54,7 +64,7 @@ async function connectDB() {
 
 // -------------------- ROUTES --------------------
 
-// Home - show detections grouped by video
+// Home - show all videos grouped by videoId
 app.get('/', async (req, res) => {
   try {
     const detections = await db.collection('detections')
@@ -71,7 +81,6 @@ app.get('/', async (req, res) => {
     });
 
     const videos = Object.values(videoMap);
-    // Use 'index.ejs' instead of 'dashboard.ejs'
     res.render('index', { videos, message: req.query.message, error: req.query.error });
   } catch (err) {
     console.error('Error loading home page:', err);
@@ -79,7 +88,7 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Search
+// Search detections by item
 app.get('/search', async (req, res) => {
   try {
     const { item } = req.query;
@@ -88,7 +97,18 @@ app.get('/search', async (req, res) => {
       .find({ item: new RegExp(item, 'i') })
       .sort({ timestamp: -1 })
       .toArray();
-    res.render('index', { videos: detections, message: null, error: null, searchTerm: item });
+
+    // Group by videoId like home
+    const videoMap = {};
+    detections.forEach(det => {
+      if (!videoMap[det.videoId]) {
+        videoMap[det.videoId] = { videoId: det.videoId, cameraId: det.cameraId, detections: [] };
+      }
+      videoMap[det.videoId].detections.push(det);
+    });
+    const videos = Object.values(videoMap);
+
+    res.render('index', { videos, message: null, error: null, searchTerm: item });
   } catch (err) {
     console.error('Search error:', err);
     res.render('index', { videos: [], message: null, error: 'Search failed', searchTerm: req.query.item });
@@ -133,7 +153,7 @@ app.post('/api/detection', async (req, res) => {
   }
 });
 
-// API - list items
+// API - list unique items
 app.get('/api/items', async (req, res) => {
   try {
     const items = await db.collection('detections').distinct('item');
@@ -150,6 +170,27 @@ app.post('/delete/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: 'Failed to delete' });
+  }
+});
+
+// -------------------- VIDEO PAGE --------------------
+app.get('/video/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+
+    const detections = await db.collection('detections')
+      .find({ videoId })
+      .sort({ timestampSec: 1 })
+      .toArray();
+
+    if (!detections.length) return res.render('index', { videos: [], error: 'Video not found' });
+
+    const videoUrl = await getVideoUrl(videoId);
+
+    res.render('video', { videoId, videoUrl, detections });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Failed to load video');
   }
 });
 
