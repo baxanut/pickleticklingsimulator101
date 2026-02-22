@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Playback - <%= videoId %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <h2>🎥 Video: <%= videoId %></h2>
+
+    <video id="player" width="800" controls>
+      <source src="<%= videoUrl %>" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+
+    <h3>📌 Detections Timeline</h3>
+    <ul class="detections-list">
+      <% detections.forEach(det => { %>
+        <li onclick="jumpTo(<%= det.timestampSec %>)">
+          <strong><%= det.item %></strong> - <%= det.timestampSec %>s
+          (<%= (det.confidence*100).toFixed(0) %>% confidence)
+        </li>
+      <% }) %>
+    </ul>
+
+    <a href="/" class="btn btn-secondary">⬅ Back to Dashboard</a>
+  </div>
+
+  <script>
+    function jumpTo(sec) {
+      const video = document.getElementById('player');
+      video.currentTime = sec;
+      video.play();
+    }
+  </script>
+</body>
+</html>
